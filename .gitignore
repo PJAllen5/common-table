@@ -1,0 +1,14 @@
+# Build output
+dist/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Environment files (never commit secrets)
+.env
+.env.*
