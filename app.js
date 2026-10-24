@@ -10,172 +10,103 @@ const I = {
   transport: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="3"/><path d="M4 11h16M8 21l1-4M16 21l-1-4"/><circle cx="8" cy="14" r=".5"/><circle cx="16" cy="14" r=".5"/></svg>',
   mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="color:var(--accent-ink)"><path d="M3 10h18M6 10v9M18 10v9M8 6h8"/></svg>',
 };
-const CATS = [
-  ['food','Food'],['housing','Housing'],['health','Health'],['legal','Legal help'],
-  ['jobs','Jobs & money'],['childcare','Childcare'],['transport','Transportation'],
-];
-const catName = k => (CATS.find(c => c[0] === k) || [k, k])[1];
 
-/* ---------- demo data ---------- */
-const ORGS = [
-  { id: 'efb', name: 'Eastside Food Bank', short: 'EF', color: 'var(--s1)', email: 'intake@eastsidefood.org' },
-  { id: 'hhc', name: 'Harbor Housing Coalition', short: 'HH', color: 'var(--s2)', email: 'casework@harborhousing.org' },
-  { id: 'nfs', name: 'Northgate Family Services', short: 'NF', color: 'var(--s3)', email: 'staff@northgatefamily.org' },
-  { id: 'rhc', name: 'Riverbend Community Clinic', short: 'RC', color: 'var(--s4)', email: 'navigator@riverbendclinic.org' },
-  { id: 'lav', name: 'Legal Aid of the Valley', short: 'LA', color: 'var(--s5)', email: 'advocate@valleylegalaid.org' },
-];
-const STAFF = { efb: 'Dana Ruiz', hhc: 'Marcus Lee', nfs: 'Priya Natarajan', rhc: 'Tom Okafor', lav: 'Grace Whitfield' };
-const org = id => ORGS.find(o => o.id === id);
+/* ---------- data store ----------
+   Live mode: the page's shared database (everyone using the hosted link sees the same data, updated live).
+   Local mode: this browser's localStorage, used when the shared database isn't available
+   (opening index.html from disk, or a visitor who isn't signed in to Claude). */
+const KEY = 'common-table-demo-v3';
+const COLLS = ['archive', 'clients', 'notes', 'requests', 'resources', 'activity'];
+const clone = x => JSON.parse(JSON.stringify(x));
+let src = Object.fromEntries(COLLS.map(c => [c, {}]));
+let mode = 'loading';          // 'loading' | 'live' | 'local'
+let liveDb = null;
+let readOnly = false;
+const loaded = new Set();
+let db = { clients: [], resources: [], requests: [], activity: [], services: [] };
 
-const seed = () => ({
-  clients: [
-    { id: 'c1', first: 'Maria', last: 'Gonzalez', dob: '1984-03-12', phone: '(555) 201-4410', household: 4, language: 'Spanish', owner: 'efb',
-      consent: { given: true, date: '2026-09-02', by: 'Dana Ruiz' }, sharedWith: ['hhc', 'nfs'], external: [],
-      needs: ['food', 'housing', 'childcare'],
-      notes: [
-        { org: 'efb', author: 'Dana Ruiz', date: '2026-09-02', text: 'Weekly pantry enrollment. Family of 4, two kids under 10. Mentioned rent increase in November.' },
-        { org: 'hhc', author: 'Marcus Lee', date: '2026-09-15', text: 'Screened for emergency rental assistance. Eligible. Application submitted, waiting on landlord W-9.' },
-        { org: 'nfs', author: 'Priya Natarajan', date: '2026-10-08', text: 'Enrolled younger child in after-school program, sliding scale fee waived.' },
-      ] },
-    { id: 'c2', first: 'James', last: 'Whitaker', dob: '1961-11-30', phone: '(555) 388-0192', household: 1, language: 'English', owner: 'hhc',
-      consent: { given: true, date: '2026-08-20', by: 'Marcus Lee' }, sharedWith: ['rhc'], external: ['va.caseworker@example.gov'],
-      needs: ['housing', 'health'],
-      notes: [
-        { org: 'hhc', author: 'Marcus Lee', date: '2026-08-20', text: 'Veteran, currently in shelter. Placed on permanent supportive housing list.' },
-        { org: 'rhc', author: 'Tom Okafor', date: '2026-09-03', text: 'Diabetes follow-up scheduled. Needs a fridge for insulin once housed.' },
-      ] },
-    { id: 'c3', first: 'Aisha', last: 'Mohammed', dob: '1993-06-18', phone: '(555) 640-7723', household: 3, language: 'Somali', owner: 'nfs',
-      consent: { given: true, date: '2026-10-01', by: 'Priya Natarajan' }, sharedWith: ['efb', 'lav'], external: [],
-      needs: ['food', 'legal', 'jobs'],
-      notes: [
-        { org: 'nfs', author: 'Priya Natarajan', date: '2026-10-01', text: 'New arrival, 2 children. Needs interpreter (Somali). Referred to food bank and legal aid for work authorization.' },
-        { org: 'lav', author: 'Grace Whitfield', date: '2026-10-12', text: 'Work permit application filed. Follow-up in 90 days.' },
-      ] },
-    { id: 'c4', first: 'Robert', last: 'Chen', dob: '1977-01-05', phone: '(555) 912-3301', household: 2, language: 'Cantonese', owner: 'rhc',
-      consent: { given: false }, sharedWith: [], external: [],
-      needs: ['health', 'transport'],
-      notes: [{ org: 'rhc', author: 'Tom Okafor', date: '2026-10-18', text: 'Missed two appointments because of transportation. Consent to share not yet discussed.' }] },
-    { id: 'c5', first: 'Tanya', last: 'Brooks', dob: '1999-09-22', phone: '(555) 277-5609', household: 2, language: 'English', owner: 'lav',
-      consent: { given: true, date: '2026-07-14', by: 'Grace Whitfield' }, sharedWith: ['hhc'], external: [],
-      needs: ['legal', 'housing'],
-      notes: [
-        { org: 'lav', author: 'Grace Whitfield', date: '2026-07-14', text: 'Eviction notice received. Hearing set for Aug 6.' },
-        { org: 'hhc', author: 'Marcus Lee', date: '2026-08-07', text: 'Eviction dismissed after back rent paid via assistance fund.' },
-      ] },
-    { id: 'c6', first: 'Luis', last: 'Herrera', dob: '1958-04-02', phone: '(555) 455-1180', household: 1, language: 'Spanish', owner: 'efb',
-      consent: { given: true, date: '2026-10-10', by: 'Dana Ruiz' }, sharedWith: ['rhc'], external: [],
-      needs: ['food', 'health'],
-      notes: [{ org: 'efb', author: 'Dana Ruiz', date: '2026-10-10', text: 'Signed up for senior home delivery box. Low-sodium diet per clinic.' }] },
-    { id: 'c7', first: 'Keisha', last: 'Daniels', dob: '1990-12-14', phone: '(555) 733-0047', household: 5, language: 'English', owner: 'nfs',
-      consent: { given: true, date: '2026-09-25', by: 'Priya Natarajan' }, sharedWith: [], external: [],
-      needs: ['childcare', 'jobs'],
-      notes: [{ org: 'nfs', author: 'Priya Natarajan', date: '2026-09-25', text: 'Looking for evening childcare to start CNA training in January.' }] },
-    { id: 'c8', first: 'Oleksandr', last: 'Kovalenko', dob: '1986-08-09', phone: '(555) 602-8834', household: 3, language: 'Ukrainian', owner: 'hhc',
-      consent: { given: true, date: '2026-10-20', by: 'Marcus Lee' }, sharedWith: ['efb', 'nfs', 'lav'], external: [],
-      needs: ['housing', 'food', 'legal'],
-      notes: [{ org: 'hhc', author: 'Marcus Lee', date: '2026-10-20', text: 'Family of 3 in temporary hotel placement through Nov 15. Shared with partners for coordinated intake.' }] },
-  ],
-  resources: [
-    { id: 'r1', org: 'efb', cat: 'food', name: 'Weekly Food Pantry', desc: 'Groceries including fresh produce, dairy and bread. Choose your own items.', address: '1420 E. Market St.', hours: 'Tue & Thu 10am–6pm, Sat 9am–1pm', days: [2,4,6], open: [9,18], phone: '(555) 210-3300', eligibility: 'Anyone in need. Bring ID if you have one; not required.', status: 'available', languages: 'English, Spanish' },
-    { id: 'r2', org: 'efb', cat: 'food', name: 'Senior Home Delivery Box', desc: 'Monthly box of shelf-stable food delivered to your door.', address: 'Delivered', hours: 'Deliveries first week of month', days: [1,2,3,4,5], open: [9,17], phone: '(555) 210-3302', eligibility: 'Age 60+, income under 130% of poverty line.', status: 'limited', languages: 'English, Spanish' },
-    { id: 'r3', org: 'efb', cat: 'food', name: 'Community Hot Meals', desc: 'Free hot dinner, no questions asked.', address: 'St. Brendan Hall, 88 Oak Ave.', hours: 'Mon–Fri 5pm–7pm', days: [1,2,3,4,5], open: [17,19], phone: '(555) 210-3300', eligibility: 'Everyone welcome.', status: 'available', languages: 'English' },
-    { id: 'r4', org: 'hhc', cat: 'housing', name: 'Emergency Rental Assistance', desc: 'One-time help with back rent or a deposit to prevent eviction.', address: '300 Harbor Blvd, Suite 2', hours: 'Mon–Fri 9am–5pm', days: [1,2,3,4,5], open: [9,17], phone: '(555) 340-7700', eligibility: 'Household income under 80% of area median. Lease and notice required.', status: 'limited', languages: 'English, Spanish, Ukrainian' },
-    { id: 'r5', org: 'hhc', cat: 'housing', name: 'Harbor Family Shelter', desc: '42 beds for families with children. Meals and case management included.', address: '19 Pier Rd.', hours: 'Intake daily 4pm–9pm', days: [0,1,2,3,4,5,6], open: [16,21], phone: '(555) 340-7711', eligibility: 'Families with at least one minor child.', status: 'full', languages: 'English' },
-    { id: 'r6', org: 'hhc', cat: 'housing', name: 'Utility Bill Help', desc: 'Help paying past-due electric, gas or water bills.', address: '300 Harbor Blvd, Suite 2', hours: 'Mon–Wed 10am–3pm', days: [1,2,3], open: [10,15], phone: '(555) 340-7705', eligibility: 'Shutoff notice required.', status: 'available', languages: 'English, Spanish' },
-    { id: 'r7', org: 'nfs', cat: 'childcare', name: 'After-School Program', desc: 'Homework help, snacks and activities for ages 6–13.', address: 'Northgate Community Center, 55 Elm St.', hours: 'Mon–Fri 3pm–6:30pm', days: [1,2,3,4,5], open: [15,18.5], phone: '(555) 455-2020', eligibility: 'Sliding scale fee; free under 150% of poverty line.', status: 'available', languages: 'English, Somali, Spanish' },
-    { id: 'r8', org: 'nfs', cat: 'jobs', name: 'Job Readiness Workshop', desc: 'Resume help, interview practice and job leads. 4-week course.', address: '55 Elm St., Room 4', hours: 'Wed 6pm–8pm', days: [3], open: [18,20], phone: '(555) 455-2024', eligibility: 'Adults 18+.', status: 'available', languages: 'English' },
-    { id: 'r9', org: 'nfs', cat: 'jobs', name: 'Free Tax Preparation', desc: 'IRS-certified volunteers file your taxes for free.', address: '55 Elm St.', hours: 'Sat 10am–2pm (Jan–Apr)', days: [6], open: [10,14], phone: '(555) 455-2030', eligibility: 'Household income under $67,000.', status: 'limited', languages: 'English, Spanish' },
-    { id: 'r10', org: 'rhc', cat: 'health', name: 'Walk-in Clinic', desc: 'Primary care, vaccines and prescriptions. Pay what you can.', address: '700 Riverbend Dr.', hours: 'Mon–Sat 8am–7pm', days: [1,2,3,4,5,6], open: [8,19], phone: '(555) 600-1200', eligibility: 'Everyone, insured or not.', status: 'available', languages: 'English, Spanish, Cantonese' },
-    { id: 'r11', org: 'rhc', cat: 'health', name: 'Mental Health Counseling', desc: 'Short-term counseling with licensed therapists.', address: '700 Riverbend Dr., 2nd floor', hours: 'By appointment', days: [1,2,3,4,5], open: [9,17], phone: '(555) 600-1250', eligibility: 'Ages 12+. Sliding scale.', status: 'limited', languages: 'English, Spanish' },
-    { id: 'r12', org: 'rhc', cat: 'transport', name: 'Medical Ride Program', desc: 'Free rides to and from medical appointments.', address: 'Pickup at your home', hours: 'Book 48 hours ahead, Mon–Fri', days: [1,2,3,4,5], open: [8,17], phone: '(555) 600-1290', eligibility: 'Clinic patients without a car.', status: 'available', languages: 'English' },
-    { id: 'r13', org: 'lav', cat: 'legal', name: 'Eviction Defense Clinic', desc: 'Free lawyer advice if you got an eviction notice or court date.', address: '12 Court Square, 3rd floor', hours: 'Mon & Thu 9am–12pm', days: [1,4], open: [9,12], phone: '(555) 777-4100', eligibility: 'Tenants facing eviction. Income limits apply.', status: 'available', languages: 'English, Spanish' },
-    { id: 'r14', org: 'lav', cat: 'legal', name: 'Immigration Legal Help', desc: 'Help with work permits, green cards and asylum questions.', address: '12 Court Square, 3rd floor', hours: 'Tue 1pm–5pm', days: [2], open: [13,17], phone: '(555) 777-4120', eligibility: 'Free for low-income residents.', status: 'full', languages: 'English, Spanish, Ukrainian, Somali (interpreter)' },
-  ],
-  requests: [
-    { id: 'q1', resource: 'r4', org: 'hhc', name: 'Sandra P.', contact: '(555) 812-6650', message: 'Got a 14-day notice, behind one month. Can someone call me after 5?', date: '2026-10-23', status: 'new' },
-    { id: 'q2', resource: 'r1', org: 'efb', name: 'Anonymous', contact: 'text (555) 390-1122', message: 'Do I need proof of address for the pantry?', date: '2026-10-22', status: 'new' },
-  ],
-  activity: [
-    { date: '2026-10-20', org: 'hhc', who: 'Marcus Lee', text: 'shared Oleksandr Kovalenko with Eastside Food Bank, Northgate Family Services, Legal Aid of the Valley' },
-    { date: '2026-10-12', org: 'lav', who: 'Grace Whitfield', text: 'added a note to Aisha Mohammed' },
-    { date: '2026-10-10', org: 'efb', who: 'Dana Ruiz', text: 'shared Luis Herrera with Riverbend Community Clinic' },
-  ],
-});
-
-/* ---------- two years of made-up history, so reports have something to show ---------- */
-const pad = n => String(n).padStart(2, '0');
-const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const TODAY = ymd(new Date());
-const ORG_CATS = { efb: ['food'], hhc: ['housing'], nfs: ['childcare', 'jobs'], rhc: ['health', 'transport'], lav: ['legal'] };
-const CAT_ORG = { food: 'efb', housing: 'hhc', childcare: 'nfs', jobs: 'nfs', health: 'rhc', transport: 'rhc', legal: 'lav' };
-
-function addHistory(d) {
-  let s = 20261024;
-  const rnd = () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-  const pick = a => a[Math.floor(rnd() * a.length)];
-  const wpick = pairs => { let r = rnd() * pairs.reduce((a, p) => a + p[1], 0); for (const [v, w] of pairs) { if ((r -= w) < 0) return v; } return pairs[0][0]; };
-  const FIRST = ['Ana', 'Ben', 'Carmen', 'Darnell', 'Elena', 'Fatima', 'George', 'Hana', 'Ivan', 'Jasmine', 'Kevin', 'Lena', 'Mohamed', 'Nadia', 'Omar', 'Paula', 'Quinn', 'Rosa', 'Samuel', 'Thu', 'Victor', 'Wanda', 'Xavier', 'Yusuf', 'Zoe', 'Andre', 'Brenda', 'Chloe', 'Diego', 'Esther', 'Farah', 'Hector', 'Irina', 'Jorge', 'Kim', 'Linh', 'Marcus', 'Nora', 'Pedro', 'Rania'];
-  const LAST = ['Adams', 'Baker', 'Castillo', 'Dang', 'Ellis', 'Farouk', 'Garcia', 'Hassan', 'Ibrahim', 'Johnson', 'Kim', 'Lopez', 'Martinez', 'Nguyen', 'Ortiz', 'Patel', 'Ramirez', 'Shevchenko', 'Tran', 'Usman', 'Vargas', 'Washington', 'Yilmaz', 'Zhang', 'Brown', 'Diaz', 'Morales', 'Ali', 'Wong', 'Reyes'];
-  const LANGS = [['English', 55], ['Spanish', 22], ['Ukrainian', 6], ['Somali', 6], ['Cantonese', 5], ['Vietnamese', 4], ['Arabic', 2]];
-  const OWNERS = [['efb', 30], ['hhc', 25], ['nfs', 20], ['rhc', 15], ['lav', 10]];
-  const now = new Date(TODAY + 'T12:00');
-  const services = [];
-  const addServices = c => {
-    const start = new Date(c.intake + 'T12:00');
-    const months = 2 + Math.floor(rnd() * 7);
-    for (let m = 0; m <= months; m++) {
-      const dt = new Date(start.getFullYear(), start.getMonth() + m, m ? 1 + Math.floor(rnd() * 28) : start.getDate());
-      if (dt > now) break;
-      for (const o of [c.owner, ...c.sharedWith]) {
-        if (rnd() < (o === c.owner ? 0.8 : 0.6)) {
-          const cats = ORG_CATS[o].filter(k => c.needs.includes(k));
-          services.push({ date: ymd(dt), org: o, cat: cats[0] || ORG_CATS[o][0], client: c.id });
-        }
-      }
-    }
+function rebuild() {
+  const clients = new Map(), requests = new Map(), services = [];
+  Object.values(src.archive).forEach(a => {
+    (a.clients || []).forEach(c => clients.set(c.id, c));
+    (a.requests || []).forEach(q => requests.set(q.id, q));
+    (a.services || []).forEach(s => services.push(s));
+  });
+  Object.values(src.clients).forEach(c => clients.set(c.id, c));
+  Object.values(src.requests).forEach(q => requests.set(q.id, q));
+  const notesBy = {};
+  Object.values(src.notes).forEach(n => (notesBy[n.clientId] ||= []).push(n));
+  db = {
+    clients: [...clients.values()].map(c => {
+      const x = clone(c);
+      x.baseNotes = x.notes || [];
+      x.notes = [...x.baseNotes, ...(notesBy[x.id] || [])].sort((a, b) => (a.date + (a.at || '')).localeCompare(b.date + (b.at || '')));
+      return x;
+    }).sort((a, b) => b.intake.localeCompare(a.intake)),
+    requests: [...requests.values()].map(clone).sort((a, b) => b.date.localeCompare(a.date)),
+    resources: Object.values(src.resources).map(clone).sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name)),
+    activity: Object.values(src.activity).map(clone).sort((a, b) => (b.at || b.date).localeCompare(a.at || a.date)),
+    services,
   };
-  d.clients.forEach(c => { c.intake = c.consent.date || c.notes[0].date; addServices(c); });
-  let n = 0;
-  for (let i = 23; i >= 0; i--) {
-    const m0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const days = i === 0 ? now.getDate() : new Date(m0.getFullYear(), m0.getMonth() + 1, 0).getDate();
-    const winter = [10, 11, 0, 1].includes(m0.getMonth()) ? 3 : 0;
-    const count = Math.round((5 + (23 - i) * 0.35 + winter + rnd() * 4) * (i === 0 ? days / 30 : 1));
-    for (let k = 0; k < count; k++) {
-      const owner = wpick(OWNERS);
-      const primary = pick(ORG_CATS[owner]);
-      const needs = [primary, ...CATS.map(c => c[0]).filter(c => c !== primary && rnd() < 0.18)].slice(0, 3);
-      const intake = ymd(new Date(m0.getFullYear(), m0.getMonth(), 1 + Math.floor(rnd() * days)));
-      const consent = rnd() < 0.84;
-      const sharedWith = consent ? [...new Set(needs.map(x => CAT_ORG[x]).filter(o => o !== owner && rnd() < 0.8))] : [];
-      const c = { id: 'g' + (++n), first: pick(FIRST), last: pick(LAST),
-        dob: `${1950 + Math.floor(rnd() * 55)}-${pad(1 + Math.floor(rnd() * 12))}-${pad(1 + Math.floor(rnd() * 28))}`,
-        phone: `(555) ${100 + Math.floor(rnd() * 899)}-${String(Math.floor(rnd() * 10000)).padStart(4, '0')}`,
-        household: wpick([[1, 25], [2, 22], [3, 20], [4, 17], [5, 10], [6, 6]]), language: wpick(LANGS), owner,
-        consent: consent ? { given: true, date: intake, by: STAFF[owner] } : { given: false }, sharedWith, external: [], needs, intake,
-        notes: [{ org: owner, author: STAFF[owner], date: intake, text: `Intake completed. Main need: ${catName(primary).toLowerCase()}.` }] };
-      d.clients.push(c); addServices(c);
-    }
-    const msgs = ['Can someone call me back about this?', 'Do I need to bring ID?', 'Is there a waitlist right now?', 'I need help this week, please call.', 'What are the income limits?'];
-    const reqCount = 2 + Math.floor(rnd() * 5) + Math.floor((23 - i) / 6);
-    for (let k = 0; k < reqCount; k++) {
-      const r = pick(d.resources);
-      const date = ymd(new Date(m0.getFullYear(), m0.getMonth(), 1 + Math.floor(rnd() * days)));
-      d.requests.push({ id: 'gq' + i + '-' + k, resource: r.id, org: r.org, name: pick(FIRST) + ' ' + pick(LAST)[0] + '.', contact: `(555) ${100 + Math.floor(rnd() * 899)}-${String(Math.floor(rnd() * 10000)).padStart(4, '0')}`, message: pick(msgs), date, status: (now - new Date(date + 'T12:00')) / 864e5 > 5 ? 'done' : 'new' });
-    }
-  }
-  d.clients.sort((a, b) => b.intake.localeCompare(a.intake));
-  d.requests.sort((a, b) => b.date.localeCompare(a.date));
-  d.services = services;
-  return d;
 }
-const fresh = () => addHistory(seed());
 
-/* ---------- state (kept in this browser only) ---------- */
-const KEY = 'common-table-demo-v2';
-let db;
-try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
+const saveLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(src)); } catch {} };
+
+function startLocal() {
+  mode = 'local';
+  try { src = JSON.parse(localStorage.getItem(KEY)); } catch { src = null; }
+  if (!src || !src.archive) { src = toSources(fresh()); saveLocal(); }
+  rebuild(); render({ preserve: true });
+}
+
+let renderQueued = false;
+const scheduleRender = () => { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; rebuild(); render({ preserve: true }); }); };
+
+async function connect() {
+  // window.claude exists only inside the Claude artifact viewer.
+  for (let i = 0; i < 10 && !window.claude?.use; i++) await new Promise(r => setTimeout(r, 100));
+  let cdb = null;
+  try { cdb = window.claude?.use ? await window.claude.use('db') : null; } catch { cdb = null; }
+  if (!cdb) { startLocal(); return; }
+  liveDb = cdb; mode = 'live';
+  try { const u = await window.claude.use('user'); if ((await u?.can('data.write')) === false) readOnly = true; } catch {}
+  COLLS.forEach(coll => {
+    let q = cdb.collection(coll);
+    q = coll === 'activity' ? q.orderBy('at', 'desc').limit(300) : q.limit(1000);
+    q.onSnapshot(snap => {
+      const m = {};
+      snap.docs.forEach(d => { if (d.exists) m[d.id] = clone(d.data()); });
+      src[coll] = m; loaded.add(coll); scheduleRender();
+    }, err => { console.warn('Shared data stopped updating:', coll, err && err.code); });
+  });
+  render({ preserve: true });
+}
+
+const NO_EDIT = 'You can look around, but only people with edit access can change the shared data.';
+async function put(coll, id, data) {
+  if (readOnly) { rebuild(); render({ preserve: true }); toast(NO_EDIT); return false; }
+  const prev = src[coll][id];
+  src[coll][id] = clone(data); rebuild();
+  if (mode === 'local') { saveLocal(); return true; }
+  if (mode !== 'live') return true;
+  try { await liveDb.doc(coll + '/' + id).set(clone(data)); return true; }
+  catch (e) {
+    if (prev === undefined) delete src[coll][id]; else src[coll][id] = prev;
+    rebuild(); render({ preserve: true });
+    if (e && e.code === 'invalid_argument') { readOnly = true; toast(NO_EDIT); }
+    else if (e && e.code === 'quota_exceeded') toast('The shared database is full, so this change was not saved.');
+    else toast('This change could not be saved. Check your connection and try again.');
+    return false;
+  }
+}
+const clientDoc = c => { const d = { ...c, notes: c.baseNotes ?? c.notes ?? [] }; delete d.baseNotes; return d; };
+const saveClient = c => put('clients', c.id, clientDoc(c));
+const saveRequest = q => put('requests', q.id, q);
+const saveResource = r => put('resources', r.id, r);
+const addNote = (c, note) => { const id = uid('n'); return put('notes', id, { ...note, id, clientId: c.id, at: new Date().toISOString() }); };
+// Save, then (only if it worked) log it and confirm with a toast.
+const commit = (p, msg, logText) => p.then(ok => { if (!ok) return; if (logText) log(logText); if (msg) toast(msg); });
+const log = text => { const id = uid('a'); put('activity', id, { id, date: TODAY, at: new Date().toISOString(), org: me(), who: S.session.name, text }); };
 
 const S = { view: 'home', session: null, tab: 'clients', clientId: null, q: '', filter: 'all', pubCat: null, pubQ: '', openNow: false, dialog: null, loginErr: '',
   rScope: 'org', rRange: 6, pivot: 'month', suppress: false, tables: new Set(), present: null };
@@ -189,7 +120,6 @@ const orgChip = id => { const o = org(id); return `<span class="org-chip">${dot(
 const uid = p => p + Math.random().toString(36).slice(2, 8);
 const me = () => S.session && S.session.org;
 const canSee = c => c.owner === me() || c.sharedWith.includes(me());
-const log = text => { db.activity.unshift({ date: TODAY, org: me(), who: S.session.name, text }); };
 const statusPill = s => ({ available: '<span class="pill ok">Open to new people</span>', limited: '<span class="pill warn">Limited spots</span>', full: '<span class="pill bad">Waitlist only</span>' }[s]);
 const isOpenNow = r => { const n = new Date(); const hr = n.getHours() + n.getMinutes() / 60; return r.days.includes(n.getDay()) && hr >= r.open[0] && hr < r.open[1]; };
 let toastTimer;
@@ -207,7 +137,13 @@ function topbar() {
   }
   return `<header class="topbar"><div class="wrap">
     <button class="brand" data-act="home" aria-label="Common Table home"><span class="brand-mark">${I.mark}</span><span class="brand-name">Common Table</span></button>
-    <div class="spacer"></div>${right}</div></header>`;
+    ${modePill()}<div class="spacer"></div>${right}</div></header>`;
+}
+function modePill() {
+  if (mode === 'loading') return '<span class="pill neutral">Connecting…</span>';
+  if (mode === 'local') return '<span class="pill neutral" title="Changes are saved only in this browser">Demo · this browser only</span>';
+  if (readOnly) return '<span class="pill warn" title="You can view the shared data but not change it">Live · view only</span>';
+  return '<span class="pill ok" title="Everyone using this link sees the same data, updated live">● Live · shared</span>';
 }
 
 function homeView() {
@@ -232,7 +168,9 @@ function homeView() {
       </button>
     </div>
     <div class="network">${ORGS.map(o => `<span class="org-chip">${dot(o)}${h(o.name)}</span>`).join('')}</div>
-    <p class="proto-note"><b>Prototype.</b> All people, organizations and phone numbers are made up. Changes you make are saved only in this browser. <button class="btn sm ghost" data-act="reset">Reset demo data</button></p>
+    <p class="proto-note"><b>Prototype.</b> Sign-in is simulated, so don't enter real client information. ${mode === 'live'
+      ? `This is the live shared version: changes appear for everyone using this link within seconds.${readOnly ? ' You have view-only access, so you can look around but not make changes.' : ''}`
+      : mode === 'local' ? 'This copy is a demo with made-up people and organizations. Changes are saved only in this browser. <button class="btn sm ghost" data-act="reset">Reset demo data</button>' : ''}</p>
   </main>`;
 }
 
@@ -292,7 +230,7 @@ function clientsPane() {
       </select>
     </div>
     ${list.length ? `<div class="table-wrap"><table><thead><tr><th>Client</th><th>Record</th><th>Needs</th><th>Consent</th><th>Last note</th></tr></thead><tbody>${rows}</tbody></table></div>${total > list.length ? `<p class="small muted">Showing the ${list.length} most recent of ${total}. Search to find others.</p>` : ''}`
-      : `<div class="empty">No clients match. Try a different search, or add a new client.</div>`}`;
+      : `<div class="empty">${mode === 'loading' ? 'Loading shared records…' : !db.clients.length ? 'No client records yet. Use “Add client” to enter the first one.' : 'No clients match. Try a different search, or add a new client.'}</div>`}`;
 }
 
 function clientPane() {
@@ -353,11 +291,11 @@ function addPane() {
       <div class="field"><label for="a-phone">Phone</label><input id="a-phone" type="tel" placeholder="(555) 000-0000"></div>
       <div class="field"><label for="a-house">Household size</label><input id="a-house" type="text" inputmode="numeric" value="1"></div>
       <div class="field"><label for="a-lang">Preferred language</label><input id="a-lang" type="text" value="English"></div>
-      <div class="field full"><label>Needs</label><div class="checks">${CATS.map(([k, n]) => `<label><input type="checkbox" name="need" value="${k}"> ${n}</label>`).join('')}</div></div>
+      <div class="field full"><label>Needs</label><div class="checks">${CATS.map(([k, n]) => `<label><input type="checkbox" id="need-${k}" name="need" value="${k}"> ${n}</label>`).join('')}</div></div>
       <div class="field full"><label for="a-note">First note</label><textarea id="a-note" placeholder="Reason for visit, situation, next steps"></textarea></div>
       <div class="field full"><div class="consent"><label class="switch"><input type="checkbox" id="a-consent"> Client agrees to share this record with partner organizations</label>
         <span class="small muted">Without consent the record stays private to your organization. You can record consent later.</span></div></div>
-      <div class="field full"><label>Share with</label><div class="checks">${ORGS.filter(o => o.id !== me()).map(o => `<label><input type="checkbox" name="share" value="${o.id}"> ${h(o.name)}</label>`).join('')}</div></div>
+      <div class="field full"><label>Share with</label><div class="checks">${ORGS.filter(o => o.id !== me()).map(o => `<label><input type="checkbox" id="share-${o.id}" name="share" value="${o.id}"> ${h(o.name)}</label>`).join('')}</div></div>
     </div>
     <p class="err" id="add-err" role="alert" hidden></p>
     <div class="toolbar"><button class="btn primary" type="submit">Save client</button><button class="btn ghost" type="button" data-act="tab" data-tab="clients">Cancel</button></div>
@@ -426,7 +364,7 @@ function publicView() {
     <main class="wrap pub-body">
       <div class="pub-row"><p><b>${list.length}</b> ${list.length === 1 ? 'place' : 'places'} found${S.pubCat ? ' for ' + catName(S.pubCat).toLowerCase() : ''}</p>
         <label class="switch"><input type="checkbox" id="p-open" ${S.openNow ? 'checked' : ''}> Open right now</label></div>
-      <div class="res-list">${list.map(r => resCard(r, false)).join('') || '<div class="empty">Nothing matches that. Try another word, or turn off “Open right now”.</div>'}</div>
+      <div class="res-list">${list.map(r => resCard(r, false)).join('') || `<div class="empty">${mode === 'loading' ? 'Loading programs…' : !db.resources.length ? 'No programs are listed yet. Partner organizations add theirs after signing in.' : 'Nothing matches that. Try another word, or turn off “Open right now”.'}</div>`}</div>
       <div class="help-box"><h3>Not sure where to start?</h3><p class="muted">Call the community helpline at <b>211</b>, any time, any language. They can connect you to every organization on this list.</p></div>
     </main>`;
 }
@@ -723,13 +661,21 @@ function dialogHTML() {
 
 /* ---------- render ---------- */
 const app = document.getElementById('app');
-function render() {
+// preserve: keep what people have typed when shared data changes underneath them.
+function render(opts = {}) {
+  const kept = {};
+  if (opts.preserve) app.querySelectorAll('input[id], textarea[id], select[id]').forEach(el => { kept[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const main = { home: homeView, login: loginView, staff: staffView, public: publicView }[S.view]();
   const focusId = document.activeElement?.id;
   const pos = document.activeElement?.selectionStart;
+  const y = window.scrollY;
   app.innerHTML = topbar() + main + dialogHTML() + presentHTML();
   tipEl.hidden = true;
-  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); try { if (pos != null) el.setSelectionRange(pos, pos); } catch {} } }
+  if (opts.preserve) {
+    Object.entries(kept).forEach(([id, v]) => { const el = document.getElementById(id); if (!el) return; if (el.type === 'checkbox') el.checked = v; else el.value = v; });
+    window.scrollTo(0, y);
+  }
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus({ preventScroll: true }); try { if (pos != null) el.setSelectionRange(pos, pos); } catch {} } }
 }
 const go = (patch) => { Object.assign(S, patch); render(); if (!patch.keepScroll) window.scrollTo(0, 0); };
 
@@ -753,15 +699,15 @@ app.addEventListener('click', e => {
     case 'go-public': go({ view: 'public' }); break;
     case 'logout': S.session = null; go({ view: 'home' }); toast('Signed out'); break;
     case 'demo-login': login(t.dataset.org); break;
-    case 'reset': db = fresh(); save(); render(); toast('Demo data reset'); break;
+    case 'reset': if (mode !== 'local') break; src = toSources(fresh()); saveLocal(); rebuild(); render(); toast('Demo data reset'); break;
     case 'tab': go({ tab: t.dataset.tab }); break;
     case 'open-client': go({ tab: 'client', clientId: t.dataset.id }); break;
-    case 'consent': { const cl = c(); cl.consent = { given: true, date: TODAY, by: S.session.name }; log(`recorded sharing consent for ${cl.first} ${cl.last}`); save(); go({ keepScroll: true }); toast('Consent recorded. You can now share this record.'); break; }
+    case 'consent': { const cl = c(); cl.consent = { given: true, date: TODAY, by: S.session.name }; commit(saveClient(cl), 'Consent recorded. You can now share this record.', `recorded sharing consent for ${cl.first} ${cl.last}`); go({ keepScroll: true }); break; }
     case 'revoke': S.dialog = { type: 'revoke' }; render(); break;
-    case 'revoke-confirm': { const cl = c(); cl.consent = { given: false }; cl.sharedWith = []; cl.external = []; log(`withdrew consent and stopped all sharing for ${cl.first} ${cl.last}`); save(); S.dialog = null; go({ keepScroll: true }); toast('Consent withdrawn. Record is private again.'); break; }
-    case 'remove-ext': { const cl = c(); cl.external = cl.external.filter(x => x !== t.dataset.email); log(`stopped sharing ${cl.first} ${cl.last} with ${t.dataset.email}`); save(); go({ keepScroll: true }); toast('Access removed'); break; }
+    case 'revoke-confirm': { const cl = c(); cl.consent = { given: false }; cl.sharedWith = []; cl.external = []; S.dialog = null; commit(saveClient(cl), 'Consent withdrawn. Record is private again.', `withdrew consent and stopped all sharing for ${cl.first} ${cl.last}`); go({ keepScroll: true }); break; }
+    case 'remove-ext': { const cl = c(); cl.external = cl.external.filter(x => x !== t.dataset.email); commit(saveClient(cl), 'Access removed', `stopped sharing ${cl.first} ${cl.last} with ${t.dataset.email}`); go({ keepScroll: true }); break; }
     case 'edit-res': S.dialog = { type: 'res', id: t.dataset.id }; render(); break;
-    case 'req-done': db.requests.find(q => q.id === t.dataset.id).status = 'done'; save(); go({ keepScroll: true }); toast('Marked as contacted'); break;
+    case 'req-done': { const q = db.requests.find(x => x.id === t.dataset.id); commit(saveRequest({ ...q, status: 'done' }), 'Marked as contacted'); go({ keepScroll: true }); break; }
     case 'r-scope': go({ rScope: t.dataset.v, keepScroll: true }); break;
     case 'r-range': go({ rRange: Number(t.dataset.v), keepScroll: true }); break;
     case 'toggle-table': { const id = t.dataset.id; S.tables.has(id) ? S.tables.delete(id) : S.tables.add(id); go({ keepScroll: true }); break; }
@@ -797,11 +743,11 @@ app.addEventListener('change', e => {
   if (t.dataset.act === 'toggle-share') {
     const cl = db.clients.find(x => x.id === S.clientId);
     const o = org(t.dataset.org);
-    if (t.checked) { cl.sharedWith.push(o.id); log(`shared ${cl.first} ${cl.last} with ${o.name}`); toast(`Shared with ${o.name}`); }
-    else { cl.sharedWith = cl.sharedWith.filter(x => x !== o.id); log(`stopped sharing ${cl.first} ${cl.last} with ${o.name}`); toast(`${o.name} no longer has access`); }
-    save(); go({ keepScroll: true });
+    if (t.checked) { cl.sharedWith.push(o.id); commit(saveClient(cl), `Shared with ${o.name}`, `shared ${cl.first} ${cl.last} with ${o.name}`); }
+    else { cl.sharedWith = cl.sharedWith.filter(x => x !== o.id); commit(saveClient(cl), `${o.name} no longer has access`, `stopped sharing ${cl.first} ${cl.last} with ${o.name}`); }
+    go({ keepScroll: true });
   }
-  if (t.dataset.act === 'set-status') { const r = db.resources.find(x => x.id === t.dataset.id); r.status = t.value; save(); go({ keepScroll: true }); toast('Availability updated for the public'); }
+  if (t.dataset.act === 'set-status') { const r = db.resources.find(x => x.id === t.dataset.id); commit(saveResource({ ...r, status: t.value }), 'Availability updated for the public'); go({ keepScroll: true }); }
   if (t.id === 'c-filter') go({ filter: t.value, keepScroll: true });
   if (t.id === 'r-pivot') go({ pivot: t.value, keepScroll: true });
   if (t.id === 'r-suppress') go({ suppress: t.checked, keepScroll: true });
@@ -825,15 +771,15 @@ app.addEventListener('submit', e => {
   if (f.id === 'note-form') {
     const txt = v('n-text'); if (!txt) return;
     const cl = db.clients.find(x => x.id === S.clientId);
-    cl.notes.push({ org: me(), author: S.session.name, date: TODAY, text: txt });
-    log(`added a note to ${cl.first} ${cl.last}`); save(); go({ keepScroll: true }); toast('Note added');
+    commit(addNote(cl, { org: me(), author: S.session.name, date: TODAY, text: txt }), 'Note added', `added a note to ${cl.first} ${cl.last}`);
+    go({ keepScroll: true });
   }
   if (f.id === 'ext-form') {
     const em = v('ext-email');
     if (!em.includes('@')) { toast('Enter a full email address'); return; }
     const cl = db.clients.find(x => x.id === S.clientId);
     if (!cl.external.includes(em)) cl.external.push(em);
-    log(`shared ${cl.first} ${cl.last} with ${em} (outside the network)`); save(); go({ keepScroll: true }); toast(`Shared with ${em}`);
+    commit(saveClient(cl), `Shared with ${em}`, `shared ${cl.first} ${cl.last} with ${em} (outside the network)`); go({ keepScroll: true });
   }
   if (f.id === 'add-form') {
     const err = document.getElementById('add-err');
@@ -846,24 +792,23 @@ app.addEventListener('submit', e => {
       consent: consent ? { given: true, date: TODAY, by: S.session.name } : { given: false }, sharedWith: shares, external: [], intake: TODAY,
       needs: [...f.querySelectorAll('input[name=need]:checked')].map(x => x.value),
       notes: v('a-note') ? [{ org: me(), author: S.session.name, date: TODAY, text: v('a-note') }] : [] };
-    db.clients.unshift(cl);
-    log(`added ${cl.first} ${cl.last}${shares.length ? ' and shared with ' + shares.map(s => org(s).name).join(', ') : ''}`);
-    save(); go({ tab: 'client', clientId: cl.id }); toast('Client saved');
+    commit(saveClient(cl), 'Client saved', `added ${cl.first} ${cl.last}${shares.length ? ' and shared with ' + shares.map(s => org(s).name).join(', ') : ''}`)
+      .then(() => { if (db.clients.some(x => x.id === cl.id)) go({ tab: 'client', clientId: cl.id }); });
   }
   if (f.id === 'ask-form') {
     if (!v('q-contact')) { const er = document.getElementById('q-err'); er.textContent = 'Add a phone number or email so they can reach you.'; er.hidden = false; return; }
     const r = db.resources.find(x => x.id === S.dialog.id);
-    db.requests.unshift({ id: uid('q'), resource: r.id, org: r.org, name: v('q-name') || 'Anonymous', contact: v('q-contact'), message: v('q-msg') || '(no message)', date: TODAY, status: 'new' });
-    save(); S.dialog = null; render(); toast(`Request sent to ${org(r.org).name}`);
+    const q = { id: uid('q'), resource: r.id, org: r.org, name: v('q-name') || 'Anonymous', contact: v('q-contact'), message: v('q-msg') || '(no message)', date: TODAY, status: 'new' };
+    S.dialog = null; commit(saveRequest(q), `Request sent to ${org(r.org).name}`); render();
   }
   if (f.id === 'res-form') {
     if (!v('r-name')) { const er = document.getElementById('r-err'); er.textContent = 'Give the program a name.'; er.hidden = false; return; }
-    let r = db.resources.find(x => x.id === S.dialog.id);
-    if (!r) { r = { id: uid('r'), org: me(), status: 'available', days: [1, 2, 3, 4, 5], open: [9, 17] }; db.resources.push(r); }
-    Object.assign(r, { name: v('r-name'), cat: v('r-cat'), phone: v('r-phone'), desc: v('r-desc'), address: v('r-addr'), hours: v('r-hours'), eligibility: v('r-elig'), languages: v('r-lang') });
-    save(); S.dialog = null; render(); toast('Resource saved. It now shows in the public finder.');
+    const r = { ...(db.resources.find(x => x.id === S.dialog.id) || { id: uid('r'), org: me(), status: 'available', days: [1, 2, 3, 4, 5], open: [9, 17], order: db.resources.length }),
+      name: v('r-name'), cat: v('r-cat'), phone: v('r-phone'), desc: v('r-desc'), address: v('r-addr'), hours: v('r-hours'), eligibility: v('r-elig'), languages: v('r-lang') };
+    S.dialog = null; commit(saveResource(r), 'Resource saved. It now shows in the public finder.'); render();
   }
 });
 
 render();
+connect();
 })();

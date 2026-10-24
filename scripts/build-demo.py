@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bundle index.html, styles.css and app.js into one file: dist/common-table.html.
+"""Bundle index.html, styles.css, data.js and app.js into one file: dist/common-table.html.
 
 The single-file version is what gets published as the hosted demo (a Claude artifact),
 which wants one self-contained page with no <html>/<head>/<body> wrapper.
@@ -10,6 +10,7 @@ import pathlib, re
 root = pathlib.Path(__file__).resolve().parent.parent
 html = (root / "index.html").read_text()
 css = (root / "styles.css").read_text()
+data_js = (root / "data.js").read_text()
 js = (root / "app.js").read_text()
 
 title = re.search(r"<title>.*?</title>", html).group(0)
@@ -23,6 +24,8 @@ out = f"""{title}
 
 <div id="app"></div>
 
+<script>
+{data_js}</script>
 <script>
 {js}</script>
 """
